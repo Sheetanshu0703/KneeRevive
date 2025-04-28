@@ -1,0 +1,11 @@
+pandas
+scikit-learn
+matplotlib
+seaborn
+joblib
+fastai
+tsai==0.7.5
+fastcore==1.5.29
+fastai==2.7.11
+torch       # your existing PyTorch version
+
