@@ -3,13 +3,14 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-// Define pins for flex sensors and vibration motor
-#define FLEX_PIN1 34 // Analog input pin for Flex Sensor 1
-#define FLEX_PIN2 35 // Analog input pin for Flex Sensor 2
-#define VIBRATION_PIN 32 // PWM pin to control vibration motor
+// Define pins for flex sensors, vibration motor, and LED
+#define FLEX_PIN1 34  // Analog input pin for Flex Sensor 1
+#define FLEX_PIN2 35  // Analog input pin for Flex Sensor 2
+#define VIBRATION_PIN 32  // PWM pin to control vibration motor
+#define LED_PIN 33  // Define pin for LED
 
 // Wi-Fi credentials
-const char* ssid = "your_SSID";       // Replace with your Wi-Fi SSID
+const char* ssid = "your_SSID";  // Replace with your Wi-Fi SSID
 const char* password = "your_PASSWORD";  // Replace with your Wi-Fi password
 
 // Backend API URL (replace with your actual API endpoint)
@@ -28,7 +29,7 @@ float gyroX, gyroY, gyroZ;
 void setup() {
   // Start Serial Monitor for debugging
   Serial.begin(115200);
-  
+
   // Connect to Wi-Fi
   WiFi.begin(ssid, password);
   
@@ -39,23 +40,25 @@ void setup() {
   }
   
   Serial.println("Connected to WiFi");
-  
+
   // Initialize I2C communication
   Wire.begin();
-  
+
   // Initialize MPU6050 sensor
   mpu.initialize();
-  
+
   // Check if the sensor is connected properly
   if (mpu.testConnection()) {
     Serial.println("MPU6050 connected successfully");
   } else {
     Serial.println("MPU6050 connection failed");
   }
-  
-  // Set vibration motor pin as output
+
+  // Set vibration motor pin and LED pin as output
   pinMode(VIBRATION_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
   analogWrite(VIBRATION_PIN, 0); // Ensure vibration is off initially
+  digitalWrite(LED_PIN, LOW); // Ensure LED is off initially
 }
 
 void loop() {
@@ -64,8 +67,8 @@ void loop() {
   mpu.getRotation(&gyroX, &gyroY, &gyroZ);
   
   // Read flex sensor data
-  flexSensorValue1 = analogRead(FLEX_PIN1); // Read Flex Sensor 1
-  flexSensorValue2 = analogRead(FLEX_PIN2); // Read Flex Sensor 2
+  flexSensorValue1 = analogRead(FLEX_PIN1);  // Read Flex Sensor 1
+  flexSensorValue2 = analogRead(FLEX_PIN2);  // Read Flex Sensor 2
 
   // Map flex sensor values to an angle range (assuming 0-1023 for full range of flexion)
   kneeAngle = map(flexSensorValue1, 0, 1023, 0, 180); // Example for Flex Sensor 1
@@ -86,8 +89,10 @@ void loop() {
   if (kneeAngle > 130) {  // Example: Unsafe bend if angle exceeds 130 degrees
     Serial.println("Unsafe bend detected!");
     activateVibration(true);  // Trigger vibration feedback
+    digitalWrite(LED_PIN, HIGH);  // Turn ON the LED (unsafe movement)
   } else {
-    activateVibration(false); // No vibration if angle is safe
+    activateVibration(false);  // No vibration if angle is safe
+    digitalWrite(LED_PIN, LOW);  // Turn OFF the LED (safe movement)
   }
 
   // Prepare data for sending to backend
@@ -100,16 +105,16 @@ void loop() {
 
   // Send data to backend using HTTP GET request
   sendDataToBackend(data);
-  
-  delay(500); // Wait for 500 ms before next reading
+
+  delay(500);  // Wait for 500 ms before next reading
 }
 
 // Function to control vibration motor
 void activateVibration(bool activate) {
   if (activate) {
-    analogWrite(VIBRATION_PIN, 255); // Full power to vibration motor
+    analogWrite(VIBRATION_PIN, 255);  // Full power to vibration motor
   } else {
-    analogWrite(VIBRATION_PIN, 0); // Turn off vibration motor
+    analogWrite(VIBRATION_PIN, 0);  // Turn off vibration motor
   }
 }
 
@@ -118,7 +123,7 @@ void sendDataToBackend(String data) {
   HTTPClient http;
 
   // Start HTTP GET request
-  http.begin(serverName + "?" + data); // Construct the full URL with query string
+  http.begin(serverName + "?" + data);  // Construct the full URL with query string
   
   // Send GET request
   int httpResponseCode = http.GET();
