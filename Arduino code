@@ -1,0 +1,139 @@
+#include <Wire.h>
+#include <MPU6050.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+// Define pins for flex sensors and vibration motor
+#define FLEX_PIN1 34 // Analog input pin for Flex Sensor 1
+#define FLEX_PIN2 35 // Analog input pin for Flex Sensor 2
+#define VIBRATION_PIN 32 // PWM pin to control vibration motor
+
+// Wi-Fi credentials
+const char* ssid = "your_SSID";       // Replace with your Wi-Fi SSID
+const char* password = "your_PASSWORD";  // Replace with your Wi-Fi password
+
+// Backend API URL (replace with your actual API endpoint)
+const char* serverName = "http://your-backend-url.com/api/data";
+
+// Initialize MPU6050 object
+MPU6050 mpu;
+
+// Variables to store sensor data
+int flexSensorValue1 = 0;
+int flexSensorValue2 = 0;
+int kneeAngle = 0;
+float accelX, accelY, accelZ;
+float gyroX, gyroY, gyroZ;
+
+void setup() {
+  // Start Serial Monitor for debugging
+  Serial.begin(115200);
+  
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  
+  Serial.println("Connected to WiFi");
+  
+  // Initialize I2C communication
+  Wire.begin();
+  
+  // Initialize MPU6050 sensor
+  mpu.initialize();
+  
+  // Check if the sensor is connected properly
+  if (mpu.testConnection()) {
+    Serial.println("MPU6050 connected successfully");
+  } else {
+    Serial.println("MPU6050 connection failed");
+  }
+  
+  // Set vibration motor pin as output
+  pinMode(VIBRATION_PIN, OUTPUT);
+  analogWrite(VIBRATION_PIN, 0); // Ensure vibration is off initially
+}
+
+void loop() {
+  // Read data from MPU6050 (acceleration and gyroscope)
+  mpu.getAcceleration(&accelX, &accelY, &accelZ);
+  mpu.getRotation(&gyroX, &gyroY, &gyroZ);
+  
+  // Read flex sensor data
+  flexSensorValue1 = analogRead(FLEX_PIN1); // Read Flex Sensor 1
+  flexSensorValue2 = analogRead(FLEX_PIN2); // Read Flex Sensor 2
+
+  // Map flex sensor values to an angle range (assuming 0-1023 for full range of flexion)
+  kneeAngle = map(flexSensorValue1, 0, 1023, 0, 180); // Example for Flex Sensor 1
+  
+  // Print sensor data to Serial Monitor for debugging
+  Serial.print("Flex Sensor 1: ");
+  Serial.print(flexSensorValue1);
+  Serial.print(" | Knee Angle: ");
+  Serial.print(kneeAngle);
+  Serial.print(" | Accel X: ");
+  Serial.print(accelX);
+  Serial.print(" | Accel Y: ");
+  Serial.print(accelY);
+  Serial.print(" | Accel Z: ");
+  Serial.println(accelZ);
+
+  // Check for unsafe movement or bend (you can define your own threshold)
+  if (kneeAngle > 130) {  // Example: Unsafe bend if angle exceeds 130 degrees
+    Serial.println("Unsafe bend detected!");
+    activateVibration(true);  // Trigger vibration feedback
+  } else {
+    activateVibration(false); // No vibration if angle is safe
+  }
+
+  // Prepare data for sending to backend
+  String data = "flexSensorValue1=" + String(flexSensorValue1) +
+                "&flexSensorValue2=" + String(flexSensorValue2) +
+                "&kneeAngle=" + String(kneeAngle) +
+                "&accelX=" + String(accelX) +
+                "&accelY=" + String(accelY) +
+                "&accelZ=" + String(accelZ);
+
+  // Send data to backend using HTTP GET request
+  sendDataToBackend(data);
+  
+  delay(500); // Wait for 500 ms before next reading
+}
+
+// Function to control vibration motor
+void activateVibration(bool activate) {
+  if (activate) {
+    analogWrite(VIBRATION_PIN, 255); // Full power to vibration motor
+  } else {
+    analogWrite(VIBRATION_PIN, 0); // Turn off vibration motor
+  }
+}
+
+// Function to send data to backend using HTTP GET request
+void sendDataToBackend(String data) {
+  HTTPClient http;
+
+  // Start HTTP GET request
+  http.begin(serverName + "?" + data); // Construct the full URL with query string
+  
+  // Send GET request
+  int httpResponseCode = http.GET();
+  
+  // Check if the request was successful
+  if (httpResponseCode > 0) {
+    Serial.print("HTTP Response Code: ");
+    Serial.println(httpResponseCode);
+    String response = http.getString();
+    Serial.println("Response from server: " + response);
+  } else {
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
+  }
+
+  // End the HTTP request
+  http.end();
+}
