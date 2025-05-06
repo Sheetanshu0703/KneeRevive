@@ -6,4 +6,6 @@ joblib
 fastapi
 fast-core
 torch       
-
+requests
+flask
+pymongo

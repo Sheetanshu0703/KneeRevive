@@ -31,7 +31,7 @@ void setup() {
   Serial.begin(115200);
   Wire.begin();
 
-  // MPU6050
+  // Initialize MPU6050
   Serial.println("Initializing MPU6050...");
   mpu.initialize();
   if (!mpu.testConnection()) {
@@ -40,13 +40,14 @@ void setup() {
   }
   Serial.println("MPU6050 connected!");
 
-  // TFLite Micro Setup
-  const tflite::Model* model = tflite::GetModel(model_tflite);
+  // Load model
+  const tflite::Model* model = tflite::GetModel(model);
   if (model->version() != TFLITE_SCHEMA_VERSION) {
     Serial.println("Model schema version mismatch!");
     while (1);
   }
 
+  // Interpreter and tensor allocation
   static tflite::AllOpsResolver resolver;
   static tflite::MicroInterpreter static_interpreter(model, resolver, tensor_arena, kTensorArenaSize);
   interpreter = &static_interpreter;
@@ -71,23 +72,34 @@ void loop() {
     int16_t ax, ay, az, gx, gy, gz;
     mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
 
-    // --- Read flex sensor and compute angle ---
+    // Normalize accelerometer values (convert to 'g')
+    float acc_x = ax / 16384.0;
+    float acc_y = ay / 16384.0;
+    float acc_z = az / 16384.0;
+
+    // Normalize gyroscope values (convert to °/s)
+    float gyro_x = gx / 131.0;
+    float gyro_y = gy / 131.0;
+    float gyro_z = gz / 131.0;
+
+    // Read flex sensor and compute knee angle
     int flexRaw = analogRead(flexPin);
     float kneeAngle = map(flexRaw, minFlex, maxFlex, 90, 180);
     kneeAngle = constrain(kneeAngle, 90, 180);
 
-    // --- Normalize data (scale down for inference if needed) ---
+    // Input data for the model (already normalized)
     float inputData[7] = {
-      static_cast<float>(ax),
-      static_cast<float>(ay),
-      static_cast<float>(az),
-      static_cast<float>(gx),
-      static_cast<float>(gy),
-      static_cast<float>(gz),
+      acc_x, acc_y, acc_z,
+      gyro_x, gyro_y, gyro_z,
       kneeAngle
     };
 
-    // Load input
+    // Load data into model input
+    if (input->type != kTfLiteFloat32) {
+      Serial.println("Model input type mismatch!");
+      return;
+    }
+
     for (int i = 0; i < 7; i++) {
       input->data.f[i] = inputData[i];
     }
@@ -98,9 +110,10 @@ void loop() {
       return;
     }
 
-    // Output classification result
+    // Output classification results
     Serial.print("Model output: ");
-    for (int i = 0; i < output->dims->data[1]; i++) {
+    int output_size = output->dims->data[output->dims->size - 1];
+    for (int i = 0; i < output_size; i++) {
       Serial.print(output->data.f[i], 4);
       Serial.print(" ");
     }
